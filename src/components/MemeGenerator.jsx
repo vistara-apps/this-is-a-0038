@@ -1,44 +1,107 @@
-import React, { useState } from 'react'
-import { useApp } from '../context/AppContext'
-import { Upload, Type, Wand2, Download, Share2 } from 'lucide-react'
-import HumorTuner from './HumorTuner'
-import MemeDisplay from './MemeDisplay'
+import React, { useState, useEffect } from 'react';
+import { useApp } from '../context/AppContext';
+import { Upload, Type, Wand2, Download, Share2, Save, AlertCircle } from 'lucide-react';
+import HumorTuner from './HumorTuner';
+import MemeDisplay from './MemeDisplay';
+import ImageUploader from './ImageUploader';
+import MemeActions from './MemeActions';
 
 const MemeGenerator = () => {
-  const { generateMeme, isGenerating, currentMeme } = useApp()
-  const [prompt, setPrompt] = useState('')
-  const [selectedImage, setSelectedImage] = useState(null)
-  const [inputMode, setInputMode] = useState('text') // 'text' or 'image'
-  const [humorStyle, setHumorStyle] = useState('witty')
-
-  const handleImageUpload = (event) => {
-    const file = event.target.files[0]
-    if (file) {
-      setSelectedImage(file)
-      setInputMode('image')
+  const { 
+    generateMeme, 
+    isGenerating, 
+    currentMeme, 
+    error, 
+    setError,
+    user,
+    saveMemeToCollection
+  } = useApp();
+  
+  const [prompt, setPrompt] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [inputMode, setInputMode] = useState('text'); // 'text' or 'image'
+  const [humorStyle, setHumorStyle] = useState('witty');
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Clear error when inputs change
+  useEffect(() => {
+    if (error) {
+      setError(null);
     }
-  }
+  }, [prompt, selectedImage, humorStyle, setError, error]);
 
   const handleGenerate = async () => {
-    if (!prompt.trim() && !selectedImage) return
+    // Validate inputs
+    if (!prompt.trim() && !selectedImage) {
+      setError('Please enter a prompt or upload an image');
+      return;
+    }
     
-    await generateMeme(prompt, selectedImage, humorStyle)
-  }
+    try {
+      await generateMeme(prompt, selectedImage, humorStyle);
+    } catch (err) {
+      // Error is handled by the context
+      console.error('Failed to generate meme:', err);
+    }
+  };
 
-  const handleDownload = () => {
-    // In a real app, this would generate and download the meme image
-    alert('Download functionality would be implemented here')
-  }
+  const handleSave = async () => {
+    if (!currentMeme) return;
+    
+    try {
+      setIsSaving(true);
+      await saveMemeToCollection(currentMeme);
+    } catch (err) {
+      console.error('Failed to save meme:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-  const handleShare = () => {
-    // In a real app, this would share to social platforms
-    alert('Share functionality would be implemented here')
-  }
+  const handleImageSelect = (file) => {
+    setSelectedImage(file);
+    if (file) {
+      setInputMode('image');
+    }
+  };
+
+  // Check if user has generations left
+  const canGenerate = user?.subscriptionTier === 'Viral' || (user?.generationsLeft > 0);
 
   return (
     <div className="space-y-6">
       <div className="glass-effect rounded-lg p-6 border border-white/20">
-        <h2 className="text-2xl font-bold text-white mb-6">Rapid Meme Creator</h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-white">Rapid Meme Creator</h2>
+          
+          {/* Generations counter */}
+          {user && user.subscriptionTier !== 'Viral' && (
+            <div className="bg-white/10 px-3 py-1 rounded-full text-sm">
+              <span className="text-purple-200">
+                {user.generationsLeft} / {user.totalGenerations} generations left
+              </span>
+            </div>
+          )}
+        </div>
+        
+        {/* Error message */}
+        {error && (
+          <div className="bg-red-500/20 text-red-300 p-3 rounded-lg mb-6 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <p>{error}</p>
+          </div>
+        )}
+        
+        {/* Warning if no generations left */}
+        {!canGenerate && (
+          <div className="bg-yellow-500/20 text-yellow-300 p-3 rounded-lg mb-6 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <div>
+              <p className="font-medium">No generations left</p>
+              <p className="text-sm">Upgrade your plan to create more memes</p>
+            </div>
+          </div>
+        )}
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Input Section */}
@@ -90,21 +153,10 @@ const MemeGenerator = () => {
                 <label className="block text-white font-medium mb-2">
                   Upload your meme template
                 </label>
-                <div className="border-2 border-dashed border-white/30 rounded-lg p-6 text-center hover:border-purple-400 transition-colors">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    id="image-upload"
-                  />
-                  <label htmlFor="image-upload" className="cursor-pointer">
-                    <Upload className="w-8 h-8 text-purple-300 mx-auto mb-2" />
-                    <p className="text-purple-200">
-                      {selectedImage ? selectedImage.name : 'Click to upload an image'}
-                    </p>
-                  </label>
-                </div>
+                <ImageUploader 
+                  onImageSelect={handleImageSelect} 
+                  selectedImage={selectedImage} 
+                />
               </div>
             )}
 
@@ -130,7 +182,7 @@ const MemeGenerator = () => {
             {/* Generate Button */}
             <button
               onClick={handleGenerate}
-              disabled={isGenerating || (!prompt.trim() && !selectedImage)}
+              disabled={isGenerating || (!prompt.trim() && !selectedImage) || !canGenerate}
               className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-6 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isGenerating ? (
@@ -154,19 +206,23 @@ const MemeGenerator = () => {
                 <MemeDisplay meme={currentMeme} />
                 <div className="flex gap-2">
                   <button
-                    onClick={handleDownload}
+                    onClick={handleSave}
+                    disabled={isSaving}
                     className="flex-1 bg-white/10 text-white font-medium py-2 px-4 rounded-lg hover:bg-white/20 transition-all flex items-center justify-center gap-2"
                   >
-                    <Download className="w-4 h-4" />
-                    Download
+                    {isSaving ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save
+                      </>
+                    )}
                   </button>
-                  <button
-                    onClick={handleShare}
-                    className="flex-1 bg-white/10 text-white font-medium py-2 px-4 rounded-lg hover:bg-white/20 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Share2 className="w-4 h-4" />
-                    Share
-                  </button>
+                  <MemeActions meme={currentMeme} />
                 </div>
               </>
             ) : (
@@ -181,7 +237,7 @@ const MemeGenerator = () => {
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default MemeGenerator
+export default MemeGenerator;
